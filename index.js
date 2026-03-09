@@ -35,63 +35,46 @@ const getAccessToken = async () => {
 
 // 2. Route to Initiate STK Push
 app.post('/api/initiate-payment', async (req, res) => {
-    const { phone, amount, orderId } = req.body;
+    // We added fullName and shirtType to the request body here
+    const { phone, amount, orderId, fullName, shirtType } = req.body; 
     
-    // Format phone to 254...
     let cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.startsWith('0')) cleanPhone = '254' + cleanPhone.slice(1);
     if (cleanPhone.startsWith('7') || cleanPhone.startsWith('1')) cleanPhone = '254' + cleanPhone;
 
     const token = await getAccessToken();
-    if (!token) return res.status(500).json({ success: false, message: "Authentication failed" });
-
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-    
-    // Password uses Shortcode (4560085) + Passkey + Timestamp
-    const shortCode = process.env.BUSINESS_SHORT_CODE;
-    const passkey = process.env.PASSKEY;
-    const password = Buffer.from(`${shortCode}${passkey}${timestamp}`).toString('base64');
+    const password = Buffer.from(`${process.env.BUSINESS_SHORT_CODE}${process.env.PASSKEY}${timestamp}`).toString('base64');
 
     const stkPayload = {
-        BusinessShortCode: shortCode, // 4560085
+        BusinessShortCode: process.env.BUSINESS_SHORT_CODE,
         Password: password,
         Timestamp: timestamp,
         TransactionType: "CustomerBuyGoodsOnline", 
         Amount: amount,
         PartyA: cleanPhone,
-        PartyB: "3348765", // YOUR ACTUAL TILL NUMBER
+        PartyB: "3348765", 
         PhoneNumber: cleanPhone,
         CallBackURL: "https://btechplus-backend-mpesa.onrender.com/api/callback",
         AccountReference: orderId,
-        TransactionDesc: "BTECH PLUS Order"
+        TransactionDesc: `BTECH Order: ${shirtType}`
     };
-
-    console.log(`Sending STK Push to ${cleanPhone} for Till 3348765...`);
 
     try {
         const response = await axios.post("https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest", stkPayload, {
             headers: { Authorization: `Bearer ${token}` }
         });
 
-        // Save initial PENDING order to DBeaver
+        // Now we save the REAL fullName and shirtType to DBeaver
         await pool.query(
             'INSERT INTO btech_orders (order_id, customer_name, phone_number, shirt_type, amount, payment_status) VALUES ($1, $2, $3, $4, $5, $6)',
-            [orderId, "Web Customer", cleanPhone, "Branded Shirt", amount, "PENDING"]
+            [orderId, fullName, cleanPhone, shirtType, amount, "PENDING"]
         );
 
-        res.status(200).json({ 
-            success: true, 
-            checkoutRequestID: response.data.CheckoutRequestID,
-            message: "Prompt sent to phone" 
-        });
-
-    } catch (error) {
-        console.error("STK ERROR DETAILS:", error.response ? error.response.data : error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: "M-Pesa Gateway Error",
-            details: error.response ? error.response.data.errorMessage : error.message 
-        });
+        res.json({ success: true, checkoutRequestID: response.data.CheckoutRequestID });
+    } catch (err) {
+        console.error("STK ERROR:", err.response ? err.response.data : err.message);
+        res.status(500).json({ success: false, message: "M-Pesa Gateway Error" });
     }
 });
 
@@ -137,14 +120,20 @@ app.get('/api/admin/orders', async (req, res) => {
 });
 
 // ROUTE: Update order status (e.g., Pending -> Delivered)
-app.patch('/api/admin/orders/:id', async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
+// Updated Admin Route with Password Protection
+app.get('/api/admin/orders', async (req, res) => {
+    const adminPassword = req.headers['x-admin-password'];
+
+    // Check if the password sent matches the one on Render
+    if (adminPassword !== process.env.ADMIN_PASSWORD) {
+        return res.status(401).json({ error: "Unauthorized: Invalid Admin Password" });
+    }
+
     try {
-        await pool.query('UPDATE btech_orders SET payment_status = $1 WHERE order_id = $2', [status, id]);
-        res.json({ success: true });
+        const result = await pool.query('SELECT * FROM btech_orders ORDER BY created_at DESC');
+        res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: "Update failed" });
+        res.status(500).json({ error: "Database error" });
     }
 });
 
