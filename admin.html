@@ -259,9 +259,9 @@
                     <span class="text-slate-500 text-[11px]">${dateStr}</span>
                 </td>
                 <td class="p-5 text-right">
-                    <button onclick="viewDetail(${order.id})" class="text-slate-500 hover:text-blue-400 transition text-sm mr-3" title="View Details"><i class="fas fa-eye"></i></button>
-                    ${status === 'PENDING' ? `<button onclick="updateStatus(${order.id},'PAID')" class="text-slate-500 hover:text-green-400 transition text-sm mr-3" title="Mark as Paid"><i class="fas fa-check-circle"></i></button>` : ''}
-                    <button onclick="deleteOrder(${order.id})" class="text-slate-500 hover:text-red-400 transition text-sm" title="Delete Order"><i class="fas fa-trash-alt"></i></button>
+                    <button onclick="viewDetail('${order.order_id}')" class="text-slate-500 hover:text-blue-400 transition text-sm mr-3" title="View Details"><i class="fas fa-eye"></i></button>
+                    ${status === 'PENDING' ? `<button onclick="updateStatus('${order.order_id}','PAID')" class="text-slate-500 hover:text-green-400 transition text-sm mr-3" title="Mark as Paid"><i class="fas fa-check-circle"></i></button>` : ''}
+                    <button onclick="deleteOrder('${order.order_id}')" class="text-slate-500 hover:text-red-400 transition text-sm" title="Delete Order"><i class="fas fa-trash-alt"></i></button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -296,8 +296,8 @@
     // ─────────────────────────────────────────────────
     // VIEW ORDER DETAIL
     // ─────────────────────────────────────────────────
-    function viewDetail(id) {
-        const order = allOrders.find(o => o.id === id);
+    function viewDetail(orderId) {
+        const order = allOrders.find(o => o.order_id === orderId);
         if (!order) return;
         const status = (order.payment_status || 'PENDING').toUpperCase();
         const chipClass = status === 'PAID' ? 'chip-paid' : status === 'FAILED' ? 'chip-failed' : 'chip-pending';
@@ -337,10 +337,10 @@
                 </div>
             </div>
             <div class="flex gap-3 mt-6 flex-wrap">
-                ${status !== 'PAID'    ? `<button onclick="updateStatus(${order.id},'PAID')"      class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-check"></i> Mark Paid</button>` : ''}
-                ${status !== 'FAILED'  ? `<button onclick="updateStatus(${order.id},'FAILED')"    class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-times"></i> Mark Failed</button>` : ''}
-                ${status !== 'DELIVERED' ? `<button onclick="updateStatus(${order.id},'DELIVERED')" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-truck"></i> Delivered</button>` : ''}
-                <button onclick="deleteOrder(${order.id})" class="bg-red-600/20 hover:bg-red-600 border border-red-600/40 text-red-400 hover:text-white py-2.5 px-4 rounded-xl text-sm font-bold transition flex items-center gap-2"><i class="fas fa-trash"></i></button>
+                ${status !== 'PAID'      ? `<button onclick="updateStatus('${order.order_id}','PAID')"      class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-check"></i> Mark Paid</button>` : ''}
+                ${status !== 'FAILED'    ? `<button onclick="updateStatus('${order.order_id}','FAILED')"    class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-times"></i> Mark Failed</button>` : ''}
+                ${status !== 'DELIVERED' ? `<button onclick="updateStatus('${order.order_id}','DELIVERED')" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-truck"></i> Delivered</button>` : ''}
+                <button onclick="deleteOrder('${order.order_id}')" class="bg-red-600/20 hover:bg-red-600 border border-red-600/40 text-red-400 hover:text-white py-2.5 px-4 rounded-xl text-sm font-bold transition flex items-center gap-2"><i class="fas fa-trash"></i></button>
                 <button onclick="closeDetail()" class="bg-slate-800 hover:bg-slate-700 text-slate-400 py-2.5 px-4 rounded-xl text-sm font-bold transition"><i class="fas fa-times"></i></button>
             </div>
         `;
@@ -359,7 +359,7 @@
     // ─────────────────────────────────────────────────
     // UPDATE STATUS
     // ─────────────────────────────────────────────────
-    async function updateStatus(id, newStatus) {
+    async function updateStatus(orderId, newStatus) {
         const password = sessionStorage.getItem('admin_pass');
         if (!password) { showToast('No admin session — please refresh and login again', 'error'); return; }
 
@@ -367,7 +367,7 @@
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
 
         try {
-            const res  = await fetch(`${BACKEND_URL}/api/admin/orders/${id}/status`, {
+            const res  = await fetch(`${BACKEND_URL}/api/admin/orders/${encodeURIComponent(orderId)}/status`, {
                 method:  'PATCH',
                 headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
                 body:    JSON.stringify({ status: newStatus })
@@ -375,8 +375,7 @@
             const data = await res.json();
 
             if (res.ok) {
-                // Update local data immediately — no full reload needed
-                const order = allOrders.find(o => o.id === id);
+                const order = allOrders.find(o => o.order_id === orderId);
                 if (order) order.payment_status = newStatus;
                 filterOrders();
                 showToast(`✅ Order marked as ${newStatus}`, 'success');
@@ -391,28 +390,24 @@
         }
     }
 
-    // ─────────────────────────────────────────────────
-    // DELETE ORDER
-    // ─────────────────────────────────────────────────
-    async function deleteOrder(id) {
-        const order = allOrders.find(o => o.id === id);
-        const name  = order?.customer_name || `Order #${id}`;
+    async function deleteOrder(orderId) {
+        const order = allOrders.find(o => o.order_id === orderId);
+        const name  = order?.customer_name || orderId;
 
-        // Custom confirm UI instead of browser alert
         if (!await confirmDialog(`Delete order from <strong>${name}</strong>?<br><span style="font-size:0.8rem;color:#94a3b8;">This cannot be undone.</span>`)) return;
 
         const password = sessionStorage.getItem('admin_pass');
         if (!password) { showToast('No admin session — please refresh', 'error'); return; }
 
         try {
-            const res  = await fetch(`${BACKEND_URL}/api/admin/orders/${id}`, {
+            const res  = await fetch(`${BACKEND_URL}/api/admin/orders/${encodeURIComponent(orderId)}`, {
                 method:  'DELETE',
                 headers: { 'x-admin-password': password }
             });
             const data = await res.json();
 
             if (res.ok) {
-                allOrders = allOrders.filter(o => o.id !== id);
+                allOrders = allOrders.filter(o => o.order_id !== orderId);
                 filterOrders();
                 showToast(`🗑️ Order deleted successfully`, 'success');
                 closeDetail();

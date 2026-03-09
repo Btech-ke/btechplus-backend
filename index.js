@@ -625,50 +625,51 @@ app.get('/api/admin/orders', adminAuth, async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN: Update Order Status
-// PATCH /api/admin/orders/:id/status
+// PATCH /api/admin/orders/:orderId/status
 // Body: { status }
 // ═══════════════════════════════════════════════════════════════
-app.patch('/api/admin/orders/:id/status', adminAuth, async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-    const allowed = ['PAID','PENDING','FAILED','DELIVERED','REFUNDED'];
-    logDb(`Updating order status | id: ${id} | new status: ${status}`);
+app.patch('/api/admin/orders/:orderId/status', adminAuth, async (req, res) => {
+    const { orderId } = req.params;
+    const { status }  = req.body;
+    const allowed     = ['PAID','PENDING','FAILED','DELIVERED','REFUNDED'];
+    logDb(`Updating order status | order_id: ${orderId} | new status: ${status}`);
     if (!allowed.includes(status?.toUpperCase())) {
         logWarn(`Invalid status: ${status}`);
         return res.status(400).json({ error: "Invalid status value" });
     }
     try {
         const result = await pool.query(
-            'UPDATE btech_orders SET payment_status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-            [status.toUpperCase(), id]
+            'UPDATE btech_orders SET payment_status = $1, updated_at = NOW() WHERE order_id = $2 RETURNING *',
+            [status.toUpperCase(), orderId]
         );
-        if (result.rowCount === 0) { logWarn(`Order not found id: ${id}`); return res.status(404).json({ error: "Order not found" }); }
-        logOk(`Order ${id} updated to ${status.toUpperCase()}`);
+        if (result.rowCount === 0) { logWarn(`Order not found: ${orderId}`); return res.status(404).json({ error: "Order not found" }); }
+        logOk(`Order ${orderId} updated to ${status.toUpperCase()}`);
         res.json({ success: true, order: result.rows[0] });
     } catch (err) {
         logError('Status update DB error', { message: err.message, code: err.code });
-        res.status(500).json({ error: "Database error" });
+        res.status(500).json({ error: err.message });
     }
 });
 
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN: Delete Order
-// DELETE /api/admin/orders/:id
+// DELETE /api/admin/orders/:orderId
 // ═══════════════════════════════════════════════════════════════
-app.delete('/api/admin/orders/:id', adminAuth, async (req, res) => {
-    logDb(`Deleting order | id: ${req.params.id}`);
+app.delete('/api/admin/orders/:orderId', adminAuth, async (req, res) => {
+    const { orderId } = req.params;
+    logDb(`Deleting order | order_id: ${orderId}`);
     try {
         const result = await pool.query(
-            'DELETE FROM btech_orders WHERE id = $1 RETURNING id, order_id',
-            [req.params.id]
+            'DELETE FROM btech_orders WHERE order_id = $1 RETURNING order_id, customer_name',
+            [orderId]
         );
-        if (result.rowCount === 0) { logWarn(`Delete: not found id: ${req.params.id}`); return res.status(404).json({ error: "Order not found" }); }
-        logOk(`Deleted order | id: ${result.rows[0].id} | order_id: ${result.rows[0].order_id}`);
-        res.json({ success: true, deleted: result.rows[0].id });
+        if (result.rowCount === 0) { logWarn(`Delete: not found order_id: ${orderId}`); return res.status(404).json({ error: "Order not found" }); }
+        logOk(`Deleted | order_id: ${result.rows[0].order_id} | customer: ${result.rows[0].customer_name}`);
+        res.json({ success: true, deleted: result.rows[0].order_id });
     } catch (err) {
         logError('Delete DB error', { message: err.message, code: err.code });
-        res.status(500).json({ error: "Database error" });
+        res.status(500).json({ error: err.message });
     }
 });
 
