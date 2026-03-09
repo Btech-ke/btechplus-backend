@@ -16,17 +16,16 @@ const pool = new Pool({
 
 // 1. Helper function to generate M-Pesa Access Token
 const getAccessToken = async () => {
-    const consumerKey = process.env.CONSUMER_KEY;
-    const consumerSecret = process.env.CONSUMER_SECRET;
-    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-
+    const auth = Buffer.from(`${process.env.CONSUMER_KEY}:${process.env.CONSUMER_SECRET}`).toString('base64');
+    console.log("Attempting to get M-Pesa Token..."); // ADD THIS
     try {
         const response = await axios.get("https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials", {
             headers: { Authorization: `Basic ${auth}` }
         });
+        console.log("Token Received Successfully"); // ADD THIS
         return response.data.access_token;
     } catch (error) {
-        console.error("M-Pesa Auth Error:", error.response ? error.response.data : error.message);
+        console.error("AUTH ERROR DETAILS:", error.response ? error.response.data : error.message); // IMPROVE THIS
         return null;
     }
 };
