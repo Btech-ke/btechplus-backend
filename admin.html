@@ -3,200 +3,430 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTECH PLUS | Command Center</title>
+    <title>BTECH PLUS | Admin Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;800&family=IBM+Plex+Mono:wght@500&display=swap');
         body { font-family: 'Sora', sans-serif; background-color: #020617; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        .glass-card { background: rgba(30,41,59,0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
         .mono { font-family: 'IBM Plex Mono', monospace; }
         .gradient-text { background: linear-gradient(135deg, #60a5fa, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .mpesa-green { color: #32B584; }
+        tr.row-enter { animation: rowFadeIn 0.4s ease-out; }
+        @keyframes rowFadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        .status-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+        .chip-paid    { background: rgba(16,185,129,0.12); color: #34d399; }
+        .chip-pending { background: rgba(245,158,11,0.12); color: #fbbf24; }
+        .chip-failed  { background: rgba(239,68,68,0.12);  color: #f87171; }
+        /* Sidebar tooltip */
+        .nav-btn { position: relative; }
+        .nav-btn::after { content: attr(data-tip); position: absolute; left: 110%; top: 50%; transform: translateY(-50%); background: #1e293b; color: #94a3b8; padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid rgba(255,255,255,0.1); }
+        .nav-btn:hover::after { opacity: 1; }
+        /* Modal */
+        .detail-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; padding: 1rem; backdrop-filter: blur(4px); }
+        .detail-modal.open { display: flex; animation: fadeIn 0.25s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .detail-box { background: #0f172a; border: 1px solid rgba(255,255,255,0.12); border-radius: 1.5rem; padding: 2rem; width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto; animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #1e3a8a; border-radius: 3px; }
     </style>
 </head>
 <body class="text-slate-200 min-h-screen">
 
-    <div class="fixed left-0 top-0 h-full w-20 bg-slate-950 flex flex-col items-center py-8 gap-8 border-r border-slate-800 z-50">
-        <div class="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white">B+</div>
-        <button class="text-blue-500 text-xl"><i class="fas fa-chart-pie"></i></button>
-        <button class="text-slate-500 text-xl hover:text-white transition"><i class="fas fa-tshirt"></i></button>
-        <button class="text-slate-500 text-xl hover:text-white transition"><i class="fas fa-users"></i></button>
-        <button onclick="logout()" class="mt-auto text-red-500 text-xl hover:scale-110 transition"><i class="fas fa-power-off"></i></button>
+<!-- SIDEBAR -->
+<div class="fixed left-0 top-0 h-full w-20 bg-slate-950 flex flex-col items-center py-8 gap-6 border-r border-slate-800 z-50">
+    <div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-lg shadow-blue-500/20">B+</div>
+    <button class="nav-btn text-blue-500 text-xl bg-blue-500/10 p-3 rounded-xl" data-tip="Dashboard"><i class="fas fa-chart-pie"></i></button>
+    <button class="nav-btn text-slate-500 text-xl hover:text-white transition p-3 hover:bg-slate-800 rounded-xl" onclick="showSection('products')" data-tip="Products"><i class="fas fa-tshirt"></i></button>
+    <button class="nav-btn text-slate-500 text-xl hover:text-white transition p-3 hover:bg-slate-800 rounded-xl" data-tip="Customers"><i class="fas fa-users"></i></button>
+    <button class="nav-btn text-slate-500 text-xl hover:text-white transition p-3 hover:bg-slate-800 rounded-xl" data-tip="Settings"><i class="fas fa-cog"></i></button>
+    <button class="nav-btn mt-auto text-red-500 text-xl hover:scale-110 transition p-3 hover:bg-red-500/10 rounded-xl" onclick="logout()" data-tip="Logout"><i class="fas fa-power-off"></i></button>
+</div>
+
+<!-- MAIN -->
+<main class="ml-20 p-6 lg:p-10">
+
+    <!-- HEADER -->
+    <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+            <h1 class="text-2xl font-extrabold tracking-tight">Admin <span class="gradient-text">Command Center</span></h1>
+            <p class="text-slate-500 text-sm mt-1">BTECH PLUS · Real-time M-Pesa Order Tracking</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+            <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
+                <input type="text" id="orderSearch" onkeyup="filterOrders()" placeholder="Search customer, receipt…"
+                    class="bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 w-64">
+            </div>
+            <select id="statusFilter" onchange="filterOrders()" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+                <option value="">All Statuses</option>
+                <option value="PAID">Paid</option>
+                <option value="PENDING">Pending</option>
+                <option value="FAILED">Failed</option>
+            </select>
+            <button onclick="exportToCSV()" class="bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition border border-slate-700 flex items-center gap-2">
+                <i class="fas fa-file-csv text-green-400"></i> Export CSV
+            </button>
+            <button onclick="loadOrders()" id="refreshBtn" class="bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-xl text-sm font-extrabold transition shadow-lg shadow-blue-500/20 flex items-center gap-2">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+    </header>
+
+    <!-- STATS -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div class="glass-card p-5 rounded-2xl col-span-1">
+            <div class="flex justify-between items-start mb-3">
+                <div class="p-2.5 bg-blue-500/10 rounded-xl text-blue-500"><i class="fas fa-wallet"></i></div>
+                <span class="text-xs font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg">Revenue</span>
+            </div>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Total Revenue</p>
+            <h2 id="stat-revenue" class="text-xl font-black mt-1 mono text-white">KES 0</h2>
+        </div>
+        <div class="glass-card p-5 rounded-2xl border-l-4 border-l-green-500">
+            <div class="p-2.5 bg-green-500/10 rounded-xl text-green-500 w-fit mb-3"><i class="fas fa-check-circle"></i></div>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Paid Orders</p>
+            <h2 id="stat-paid" class="text-xl font-black mt-1 mono text-green-400">0</h2>
+        </div>
+        <div class="glass-card p-5 rounded-2xl border-l-4 border-l-yellow-500">
+            <div class="p-2.5 bg-yellow-500/10 rounded-xl text-yellow-500 w-fit mb-3"><i class="fas fa-clock"></i></div>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Pending</p>
+            <h2 id="stat-pending" class="text-xl font-black mt-1 mono text-yellow-400">0</h2>
+        </div>
+        <div class="glass-card p-5 rounded-2xl border-l-4 border-l-red-500">
+            <div class="p-2.5 bg-red-500/10 rounded-xl text-red-500 w-fit mb-3"><i class="fas fa-times-circle"></i></div>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Failed</p>
+            <h2 id="stat-failed" class="text-xl font-black mt-1 mono text-red-400">0</h2>
+        </div>
+        <div class="glass-card p-5 rounded-2xl">
+            <div class="p-2.5 bg-purple-500/10 rounded-xl text-purple-500 w-fit mb-3"><i class="fas fa-chart-line"></i></div>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Avg. Order Value</p>
+            <h2 id="stat-avg" class="text-xl font-black mt-1 mono text-white">KES 0</h2>
+        </div>
     </div>
 
-    <main class="ml-20 p-8 lg:p-12">
-        
-        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
-            <div>
-                <h1 class="text-3xl font-extrabold tracking-tight">Admin <span class="gradient-text">Command Center</span></h1>
-                <p class="text-slate-500 text-sm mt-1">Real-time M-Pesa order tracking for BTECH PLUS</p>
+    <!-- TABLE -->
+    <div class="glass-card rounded-2xl overflow-hidden">
+        <div class="p-5 border-b border-slate-800 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <h3 class="font-bold text-sm uppercase tracking-widest text-slate-400">Transaction Ledger</h3>
+                <span id="orderCount" class="bg-slate-800 text-slate-400 text-xs font-bold px-2.5 py-0.5 rounded-full">0 orders</span>
             </div>
-            <div class="flex gap-3">
-                <button onclick="exportToCSV()" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-sm font-semibold transition border border-slate-700">
-                    <i class="fas fa-file-export mr-2"></i> Export CSV
-                </button>
-                <button onclick="loadOrders()" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-xl text-sm font-extrabold transition shadow-lg shadow-blue-500/20">
-                    <i class="fas fa-sync-alt mr-2"></i> Refresh
-                </button>
-            </div>
-        </header>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-            <div class="glass-card p-6 rounded-3xl">
-                <div class="flex justify-between items-start mb-4">
-                    <div class="p-3 bg-blue-500/10 rounded-2xl text-blue-500"><i class="fas fa-wallet fa-lg"></i></div>
-                    <span class="text-xs font-bold text-blue-400">+12%</span>
-                </div>
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Revenue</p>
-                <h2 id="stat-revenue" class="text-2xl font-black mt-1 mono">KES 0</h2>
-            </div>
-            <div class="glass-card p-6 rounded-3xl border-l-4 border-l-green-500">
-                <div class="flex justify-between items-start mb-4">
-                    <div class="p-3 bg-green-500/10 rounded-2xl text-green-500"><i class="fas fa-check-circle fa-lg"></i></div>
-                </div>
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Paid Orders</p>
-                <h2 id="stat-paid" class="text-2xl font-black mt-1 mono text-green-400">0</h2>
-            </div>
-            <div class="glass-card p-6 rounded-3xl border-l-4 border-l-yellow-500">
-                <div class="flex justify-between items-start mb-4">
-                    <div class="p-3 bg-yellow-500/10 rounded-2xl text-yellow-500"><i class="fas fa-clock fa-lg"></i></div>
-                </div>
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Pending</p>
-                <h2 id="stat-pending" class="text-2xl font-black mt-1 mono text-yellow-400">0</h2>
-            </div>
-            <div class="glass-card p-6 rounded-3xl">
-                <div class="flex justify-between items-start mb-4">
-                    <div class="p-3 bg-purple-500/10 rounded-2xl text-purple-500"><i class="fas fa-shopping-cart fa-lg"></i></div>
-                </div>
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Avg. Order Value</p>
-                <h2 id="stat-avg" class="text-2xl font-black mt-1 mono">KES 0</h2>
+            <div class="flex items-center gap-2 text-xs text-slate-500">
+                <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse inline-block"></span> Live
             </div>
         </div>
-
-        <div class="glass-card rounded-3xl overflow-hidden">
-            <div class="p-6 border-b border-slate-800 flex justify-between items-center">
-                <h3 class="font-bold">Transaction Ledger</h3>
-                <div class="relative">
-                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
-                    <input type="text" id="orderSearch" onkeyup="filterOrders()" placeholder="Search customer or receipt..." class="bg-slate-900/50 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500">
-                </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left">
-                    <thead class="bg-slate-900/50 text-slate-500 text-[10px] uppercase tracking-widest font-black">
-                        <tr>
-                            <th class="p-6">Customer / Contact</th>
-                            <th class="p-6">Product Details</th>
-                            <th class="p-6">Payment Status</th>
-                            <th class="p-6">M-Pesa Reference</th>
-                            <th class="p-6">Order ID</th>
-                            <th class="p-6 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="orderTable" class="text-sm">
-                        </tbody>
-                </table>
-            </div>
-        </div>
-    </main>
-
-    <script>
-        const BACKEND_URL = 'https://btechplus-backend-mpesa.onrender.com';
-        let allOrders = [];
-
-        async function loadOrders() {
-            const password = sessionStorage.getItem('admin_pass') || prompt("Enter BTECH Admin Password:");
-            if (!password) return;
-            sessionStorage.setItem('admin_pass', password);
-
-            try {
-                const res = await fetch(`${BACKEND_URL}/api/admin/orders`, {
-                    headers: { 'x-admin-password': password }
-                });
-
-                if (res.status === 401) {
-                    alert("Unauthorized!");
-                    sessionStorage.removeItem('admin_pass');
-                    return;
-                }
-
-                allOrders = await res.json();
-                renderUI(allOrders);
-            } catch (err) {
-                console.error("Fetch failed", err);
-            }
-        }
-
-        function renderUI(orders) {
-            const tbody = document.getElementById('orderTable');
-            tbody.innerHTML = '';
-            
-            let revenue = 0;
-            let paid = 0;
-            let pending = 0;
-
-            orders.forEach(order => {
-                const isPaid = order.payment_status === 'PAID';
-                if (isPaid) { revenue += order.amount; paid++; } else { pending++; }
-
-                tbody.innerHTML += `
-                    <tr class="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
-                        <td class="p-6">
-                            <div class="font-extrabold text-white">${order.customer_name}</div>
-                            <div class="text-slate-500 text-xs mono mt-1">${order.phone_number}</div>
-                        </td>
-                        <td class="p-6">
-                            <div class="text-xs uppercase font-bold text-blue-400">${order.shirt_type}</div>
-                            <div class="font-black text-white mt-1 mono">KES ${order.amount.toLocaleString()}</div>
-                        </td>
-                        <td class="p-6">
-                            <span class="px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter ${isPaid ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-400'}">
-                                <i class="fas ${isPaid ? 'fa-check-circle' : 'fa-hourglass-half'} mr-1"></i> ${order.payment_status}
-                            </span>
-                        </td>
-                        <td class="p-6 mono text-slate-400 text-xs font-bold">${order.mpesa_receipt || 'WAITING...'}</td>
-                        <td class="p-6 mono text-[10px] text-slate-600">${order.order_id}</td>
-                        <td class="p-6 text-right">
-                            <button class="text-slate-500 hover:text-white transition"><i class="fas fa-ellipsis-v"></i></button>
-                        </td>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="bg-slate-900/60 text-slate-500 text-[10px] uppercase tracking-widest font-black">
+                    <tr>
+                        <th class="p-5">Customer</th>
+                        <th class="p-5">Items / Type</th>
+                        <th class="p-5">Amount</th>
+                        <th class="p-5">Status</th>
+                        <th class="p-5">M-Pesa Receipt</th>
+                        <th class="p-5">Date</th>
+                        <th class="p-5 text-right">Action</th>
                     </tr>
-                `;
+                </thead>
+                <tbody id="orderTable" class="text-sm divide-y divide-slate-800/60"></tbody>
+            </table>
+            <div id="emptyState" class="hidden text-center py-16 text-slate-500">
+                <i class="fas fa-inbox text-5xl mb-4 block opacity-30"></i>
+                <p class="font-semibold">No orders found</p>
+            </div>
+        </div>
+        <div class="p-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-500">
+            <span id="lastUpdated">Last updated: —</span>
+            <span id="pageInfo">—</span>
+        </div>
+    </div>
+
+</main>
+
+<!-- ORDER DETAIL MODAL -->
+<div class="detail-modal" id="detailModal">
+    <div class="detail-box">
+        <div class="flex justify-between items-start mb-6">
+            <h2 class="text-lg font-extrabold text-white">Order Details</h2>
+            <button onclick="closeDetail()" class="text-slate-500 hover:text-white text-xl transition"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="detailContent"></div>
+    </div>
+</div>
+
+<script>
+    const BACKEND_URL = 'https://btechplus-backend-mpesa.onrender.com';
+    let allOrders = [];
+    let autoRefreshTimer = null;
+
+    // ─────────────────────────────────────────────────
+    // LOAD ORDERS
+    // ─────────────────────────────────────────────────
+    async function loadOrders(silent = false) {
+        const password = sessionStorage.getItem('admin_pass') || prompt("Enter BTECH Admin Password:");
+        if (!password) return;
+        sessionStorage.setItem('admin_pass', password);
+
+        const btn = document.getElementById('refreshBtn');
+        if (!silent) {
+            btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Loading…';
+            btn.disabled = true;
+        }
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/orders`, {
+                headers: { 'x-admin-password': password }
             });
-
-            document.getElementById('stat-revenue').innerText = `KES ${revenue.toLocaleString()}`;
-            document.getElementById('stat-paid').innerText = paid;
-            document.getElementById('stat-pending').innerText = pending;
-            document.getElementById('stat-avg').innerText = `KES ${paid > 0 ? Math.round(revenue/paid).toLocaleString() : 0}`;
+            if (res.status === 401) {
+                alert("❌ Unauthorized! Wrong password.");
+                sessionStorage.removeItem('admin_pass');
+                btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+                btn.disabled = false;
+                return;
+            }
+            allOrders = await res.json();
+            renderUI(allOrders);
+            document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        } catch (err) {
+            console.error("Fetch failed", err);
+            if (!silent) alert("⚠️ Could not connect to server. Make sure the backend is running.");
         }
 
-        function filterOrders() {
-            const query = document.getElementById('orderSearch').value.toLowerCase();
-            const filtered = allOrders.filter(o => 
-                o.customer_name.toLowerCase().includes(query) || 
-                (o.mpesa_receipt && o.mpesa_receipt.toLowerCase().includes(query))
-            );
-            renderUI(filtered);
+        if (!silent) {
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+            btn.disabled = false;
         }
 
-        function logout() {
+        // Start auto-refresh every 30 seconds
+        if (!autoRefreshTimer) {
+            autoRefreshTimer = setInterval(() => loadOrders(true), 30000);
+        }
+    }
+
+    // ─────────────────────────────────────────────────
+    // RENDER UI
+    // ─────────────────────────────────────────────────
+    function renderUI(orders) {
+        const tbody = document.getElementById('orderTable');
+        const empty = document.getElementById('emptyState');
+        tbody.innerHTML = '';
+
+        let revenue = 0, paid = 0, pending = 0, failed = 0;
+
+        if (orders.length === 0) {
+            empty.classList.remove('hidden');
+        } else {
+            empty.classList.add('hidden');
+        }
+
+        orders.forEach(order => {
+            const status = (order.payment_status || 'PENDING').toUpperCase();
+            if (status === 'PAID')    { revenue += order.amount; paid++; }
+            else if (status === 'FAILED') { failed++; }
+            else { pending++; }
+
+            const chipClass = status === 'PAID' ? 'chip-paid' : status === 'FAILED' ? 'chip-failed' : 'chip-pending';
+            const chipIcon  = status === 'PAID' ? 'fa-check-circle' : status === 'FAILED' ? 'fa-times-circle' : 'fa-clock';
+            const dateStr   = order.created_at ? new Date(order.created_at).toLocaleString() : '—';
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-800/30 transition row-enter';
+            tr.innerHTML = `
+                <td class="p-5">
+                    <div class="font-extrabold text-white text-sm">${order.customer_name || '—'}</div>
+                    <div class="text-slate-500 text-[11px] mono mt-0.5">${order.phone_number || '—'}</div>
+                </td>
+                <td class="p-5">
+                    <div class="text-[11px] font-bold text-blue-400 uppercase tracking-wide mb-1">${truncate(order.shirt_type || '—', 40)}</div>
+                </td>
+                <td class="p-5">
+                    <div class="font-black text-white mono text-sm">KES ${(order.amount||0).toLocaleString()}</div>
+                </td>
+                <td class="p-5">
+                    <span class="status-chip ${chipClass}"><i class="fas ${chipIcon}"></i> ${status}</span>
+                </td>
+                <td class="p-5">
+                    <span class="mono text-slate-400 text-[11px] font-bold">${order.mpesa_receipt || 'WAITING…'}</span>
+                </td>
+                <td class="p-5">
+                    <span class="text-slate-500 text-[11px]">${dateStr}</span>
+                </td>
+                <td class="p-5 text-right">
+                    <button onclick="viewDetail(${order.id})" class="text-slate-500 hover:text-blue-400 transition text-sm mr-2" title="View"><i class="fas fa-eye"></i></button>
+                    ${status === 'PENDING' ? `<button onclick="updateStatus(${order.id},'PAID')" class="text-slate-500 hover:text-green-400 transition text-sm mr-2" title="Mark Paid"><i class="fas fa-check"></i></button>` : ''}
+                    <button onclick="deleteOrder(${order.id})" class="text-slate-500 hover:text-red-400 transition text-sm" title="Delete"><i class="fas fa-trash"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('stat-revenue').textContent = `KES ${revenue.toLocaleString()}`;
+        document.getElementById('stat-paid').textContent    = paid;
+        document.getElementById('stat-pending').textContent = pending;
+        document.getElementById('stat-failed').textContent  = failed;
+        document.getElementById('stat-avg').textContent     = `KES ${paid > 0 ? Math.round(revenue/paid).toLocaleString() : 0}`;
+        document.getElementById('orderCount').textContent   = `${orders.length} order${orders.length !== 1 ? 's' : ''}`;
+        document.getElementById('pageInfo').textContent     = `Showing ${orders.length} of ${allOrders.length}`;
+    }
+
+    // ─────────────────────────────────────────────────
+    // FILTER
+    // ─────────────────────────────────────────────────
+    function filterOrders() {
+        const q      = document.getElementById('orderSearch').value.toLowerCase();
+        const status = document.getElementById('statusFilter').value.toUpperCase();
+        const filtered = allOrders.filter(o => {
+            const matchQ = !q || (o.customer_name && o.customer_name.toLowerCase().includes(q))
+                               || (o.mpesa_receipt  && o.mpesa_receipt.toLowerCase().includes(q))
+                               || (o.order_id       && o.order_id.toLowerCase().includes(q))
+                               || (o.phone_number   && o.phone_number.includes(q));
+            const matchS = !status || (o.payment_status || 'PENDING').toUpperCase() === status;
+            return matchQ && matchS;
+        });
+        renderUI(filtered);
+    }
+
+    // ─────────────────────────────────────────────────
+    // VIEW ORDER DETAIL
+    // ─────────────────────────────────────────────────
+    function viewDetail(id) {
+        const order = allOrders.find(o => o.id === id);
+        if (!order) return;
+        const status = (order.payment_status || 'PENDING').toUpperCase();
+        const chipClass = status === 'PAID' ? 'chip-paid' : status === 'FAILED' ? 'chip-failed' : 'chip-pending';
+        document.getElementById('detailContent').innerHTML = `
+            <div class="space-y-3">
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Order ID</span>
+                    <span class="mono text-blue-400 text-sm font-bold">${order.order_id}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Customer</span>
+                    <span class="text-white text-sm font-bold">${order.customer_name}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Phone</span>
+                    <span class="mono text-slate-300 text-sm">${order.phone_number}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Items</span>
+                    <span class="text-slate-300 text-sm text-right max-w-xs">${order.shirt_type}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Amount</span>
+                    <span class="mono text-white font-black text-lg">KES ${(order.amount||0).toLocaleString()}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Status</span>
+                    <span class="status-chip ${chipClass}">${status}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-slate-800">
+                    <span class="text-slate-500 text-xs font-bold uppercase">M-Pesa Receipt</span>
+                    <span class="mono text-green-400 text-sm font-bold">${order.mpesa_receipt || 'Awaiting…'}</span>
+                </div>
+                <div class="flex justify-between py-2">
+                    <span class="text-slate-500 text-xs font-bold uppercase">Date</span>
+                    <span class="text-slate-400 text-sm">${order.created_at ? new Date(order.created_at).toLocaleString() : '—'}</span>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                ${status === 'PENDING' ? `<button onclick="updateStatus(${order.id},'PAID'); closeDetail();" class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-xl text-sm font-bold transition">✓ Mark as Paid</button>` : ''}
+                <button onclick="closeDetail()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl text-sm font-bold transition">Close</button>
+            </div>
+        `;
+        document.getElementById('detailModal').classList.add('open');
+    }
+
+    function closeDetail() {
+        document.getElementById('detailModal').classList.remove('open');
+    }
+
+    // Close on outside click
+    document.getElementById('detailModal').addEventListener('click', e => {
+        if (e.target === document.getElementById('detailModal')) closeDetail();
+    });
+
+    // ─────────────────────────────────────────────────
+    // UPDATE STATUS
+    // ─────────────────────────────────────────────────
+    async function updateStatus(id, newStatus) {
+        const password = sessionStorage.getItem('admin_pass');
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/orders/${id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+                body: JSON.stringify({ status: newStatus })
+            });
+            if (res.ok) {
+                const order = allOrders.find(o => o.id === id);
+                if (order) order.payment_status = newStatus;
+                filterOrders();
+            } else {
+                alert('Failed to update status');
+            }
+        } catch (err) {
+            alert('Server error');
+        }
+    }
+
+    // ─────────────────────────────────────────────────
+    // DELETE ORDER
+    // ─────────────────────────────────────────────────
+    async function deleteOrder(id) {
+        if (!confirm('Are you sure you want to delete this order?')) return;
+        const password = sessionStorage.getItem('admin_pass');
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/orders/${id}`, {
+                method: 'DELETE',
+                headers: { 'x-admin-password': password }
+            });
+            if (res.ok) {
+                allOrders = allOrders.filter(o => o.id !== id);
+                filterOrders();
+            } else {
+                alert('Failed to delete order');
+            }
+        } catch (err) { alert('Server error'); }
+    }
+
+    // ─────────────────────────────────────────────────
+    // EXPORT CSV
+    // ─────────────────────────────────────────────────
+    function exportToCSV() {
+        if (allOrders.length === 0) { alert('No orders to export!'); return; }
+        let csv = "Order ID,Customer,Phone,Items,Amount (KES),Status,M-Pesa Receipt,Date\n";
+        allOrders.forEach(o => {
+            const date = o.created_at ? new Date(o.created_at).toLocaleString() : '';
+            csv += `"${o.order_id}","${o.customer_name}","${o.phone_number}","${o.shirt_type}",${o.amount},"${o.payment_status}","${o.mpesa_receipt||''}","${date}"\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `BTECH_PLUS_Orders_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function logout() {
+        if (confirm('Logout from admin panel?')) {
             sessionStorage.removeItem('admin_pass');
+            clearInterval(autoRefreshTimer);
             location.reload();
         }
+    }
 
-        function exportToCSV() {
-            let csv = "Customer,Phone,Item,Amount,Status,Receipt,OrderID\n";
-            allOrders.forEach(o => {
-                csv += `${o.customer_name},${o.phone_number},${o.shirt_type},${o.amount},${o.payment_status},${o.mpesa_receipt || 'N/A'},${o.order_id}\n`;
-            });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.setAttribute('href', url);
-            a.setAttribute('download', `BTECH_PLUS_ORDERS_${new Date().toISOString().slice(0,10)}.csv`);
-            a.click();
-        }
+    function truncate(str, max) { return str.length > max ? str.slice(0, max) + '…' : str; }
 
-        window.onload = loadOrders;
-    </script>
+    // ─────────────────────────────────────────────────
+    // INIT
+    // ─────────────────────────────────────────────────
+    window.onload = loadOrders;
+</script>
 </body>
 </html>
