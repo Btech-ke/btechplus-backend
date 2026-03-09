@@ -124,5 +124,29 @@ app.post('/api/callback', async (req, res) => {
     res.status(200).send("OK");
 });
 
+
+// Add this to your index.js
+// ROUTE: Get all orders for the Admin Dashboard
+app.get('/api/admin/orders', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM btech_orders ORDER BY created_at DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Database error" });
+    }
+});
+
+// ROUTE: Update order status (e.g., Pending -> Delivered)
+app.patch('/api/admin/orders/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    try {
+        await pool.query('UPDATE btech_orders SET payment_status = $1 WHERE order_id = $2', [status, id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Update failed" });
+    }
+});
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`BTECH Brain Live on port ${PORT}`));
