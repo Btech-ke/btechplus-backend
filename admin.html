@@ -33,6 +33,8 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #1e3a8a; border-radius: 3px; }
+        /* Toast animation */
+        @keyframes slideInRight { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     </style>
 </head>
 <body class="text-slate-200 min-h-screen">
@@ -194,7 +196,7 @@
             document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         } catch (err) {
             console.error("Fetch failed", err);
-            if (!silent) alert("⚠️ Could not connect to server. Make sure the backend is running.");
+            if (!silent) showToast('⚠️ Could not connect to server. Is the backend running?', 'error');
         }
 
         if (!silent) {
@@ -257,9 +259,9 @@
                     <span class="text-slate-500 text-[11px]">${dateStr}</span>
                 </td>
                 <td class="p-5 text-right">
-                    <button onclick="viewDetail(${order.id})" class="text-slate-500 hover:text-blue-400 transition text-sm mr-2" title="View"><i class="fas fa-eye"></i></button>
-                    ${status === 'PENDING' ? `<button onclick="updateStatus(${order.id},'PAID')" class="text-slate-500 hover:text-green-400 transition text-sm mr-2" title="Mark Paid"><i class="fas fa-check"></i></button>` : ''}
-                    <button onclick="deleteOrder(${order.id})" class="text-slate-500 hover:text-red-400 transition text-sm" title="Delete"><i class="fas fa-trash"></i></button>
+                    <button onclick="viewDetail(${order.id})" class="text-slate-500 hover:text-blue-400 transition text-sm mr-3" title="View Details"><i class="fas fa-eye"></i></button>
+                    ${status === 'PENDING' ? `<button onclick="updateStatus(${order.id},'PAID')" class="text-slate-500 hover:text-green-400 transition text-sm mr-3" title="Mark as Paid"><i class="fas fa-check-circle"></i></button>` : ''}
+                    <button onclick="deleteOrder(${order.id})" class="text-slate-500 hover:text-red-400 transition text-sm" title="Delete Order"><i class="fas fa-trash-alt"></i></button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -334,9 +336,12 @@
                     <span class="text-slate-400 text-sm">${order.created_at ? new Date(order.created_at).toLocaleString() : '—'}</span>
                 </div>
             </div>
-            <div class="flex gap-3 mt-6">
-                ${status === 'PENDING' ? `<button onclick="updateStatus(${order.id},'PAID'); closeDetail();" class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-xl text-sm font-bold transition">✓ Mark as Paid</button>` : ''}
-                <button onclick="closeDetail()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl text-sm font-bold transition">Close</button>
+            <div class="flex gap-3 mt-6 flex-wrap">
+                ${status !== 'PAID'    ? `<button onclick="updateStatus(${order.id},'PAID')"      class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-check"></i> Mark Paid</button>` : ''}
+                ${status !== 'FAILED'  ? `<button onclick="updateStatus(${order.id},'FAILED')"    class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-times"></i> Mark Failed</button>` : ''}
+                ${status !== 'DELIVERED' ? `<button onclick="updateStatus(${order.id},'DELIVERED')" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"><i class="fas fa-truck"></i> Delivered</button>` : ''}
+                <button onclick="deleteOrder(${order.id})" class="bg-red-600/20 hover:bg-red-600 border border-red-600/40 text-red-400 hover:text-white py-2.5 px-4 rounded-xl text-sm font-bold transition flex items-center gap-2"><i class="fas fa-trash"></i></button>
+                <button onclick="closeDetail()" class="bg-slate-800 hover:bg-slate-700 text-slate-400 py-2.5 px-4 rounded-xl text-sm font-bold transition"><i class="fas fa-times"></i></button>
             </div>
         `;
         document.getElementById('detailModal').classList.add('open');
@@ -356,21 +361,33 @@
     // ─────────────────────────────────────────────────
     async function updateStatus(id, newStatus) {
         const password = sessionStorage.getItem('admin_pass');
+        if (!password) { showToast('No admin session — please refresh and login again', 'error'); return; }
+
+        const btn = event?.target;
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+
         try {
-            const res = await fetch(`${BACKEND_URL}/api/admin/orders/${id}/status`, {
-                method: 'PATCH',
+            const res  = await fetch(`${BACKEND_URL}/api/admin/orders/${id}/status`, {
+                method:  'PATCH',
                 headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-                body: JSON.stringify({ status: newStatus })
+                body:    JSON.stringify({ status: newStatus })
             });
+            const data = await res.json();
+
             if (res.ok) {
+                // Update local data immediately — no full reload needed
                 const order = allOrders.find(o => o.id === id);
                 if (order) order.payment_status = newStatus;
                 filterOrders();
+                showToast(`✅ Order marked as ${newStatus}`, 'success');
+                closeDetail();
             } else {
-                alert('Failed to update status');
+                showToast(`❌ ${data.error || 'Failed to update status'} (HTTP ${res.status})`, 'error');
             }
         } catch (err) {
-            alert('Server error');
+            showToast(`❌ Network error: ${err.message}`, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; }
         }
     }
 
@@ -378,20 +395,83 @@
     // DELETE ORDER
     // ─────────────────────────────────────────────────
     async function deleteOrder(id) {
-        if (!confirm('Are you sure you want to delete this order?')) return;
+        const order = allOrders.find(o => o.id === id);
+        const name  = order?.customer_name || `Order #${id}`;
+
+        // Custom confirm UI instead of browser alert
+        if (!await confirmDialog(`Delete order from <strong>${name}</strong>?<br><span style="font-size:0.8rem;color:#94a3b8;">This cannot be undone.</span>`)) return;
+
         const password = sessionStorage.getItem('admin_pass');
+        if (!password) { showToast('No admin session — please refresh', 'error'); return; }
+
         try {
-            const res = await fetch(`${BACKEND_URL}/api/admin/orders/${id}`, {
-                method: 'DELETE',
+            const res  = await fetch(`${BACKEND_URL}/api/admin/orders/${id}`, {
+                method:  'DELETE',
                 headers: { 'x-admin-password': password }
             });
+            const data = await res.json();
+
             if (res.ok) {
                 allOrders = allOrders.filter(o => o.id !== id);
                 filterOrders();
+                showToast(`🗑️ Order deleted successfully`, 'success');
+                closeDetail();
             } else {
-                alert('Failed to delete order');
+                showToast(`❌ ${data.error || 'Failed to delete'} (HTTP ${res.status})`, 'error');
             }
-        } catch (err) { alert('Server error'); }
+        } catch (err) {
+            showToast(`❌ Network error: ${err.message}`, 'error');
+        }
+    }
+
+    // ─────────────────────────────────────────────────
+    // TOAST NOTIFICATION (replaces alert())
+    // ─────────────────────────────────────────────────
+    function showToast(message, type = 'success') {
+        // Remove existing toasts
+        document.querySelectorAll('.admin-toast').forEach(t => t.remove());
+
+        const colors = {
+            success: 'bg-green-600 border-green-500',
+            error:   'bg-red-700 border-red-600',
+            info:    'bg-blue-700 border-blue-600',
+            warning: 'bg-yellow-600 border-yellow-500',
+        };
+        const toast = document.createElement('div');
+        toast.className = `admin-toast fixed top-6 right-6 z-[999] px-5 py-3 rounded-xl border text-white text-sm font-semibold shadow-2xl max-w-sm ${colors[type] || colors.info}`;
+        toast.style.animation = 'slideInRight 0.3s ease-out';
+        toast.innerHTML = message;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.4s'; setTimeout(() => toast.remove(), 400); }, 3500);
+    }
+
+    // ─────────────────────────────────────────────────
+    // CONFIRM DIALOG (replaces confirm())
+    // ─────────────────────────────────────────────────
+    function confirmDialog(message) {
+        return new Promise(resolve => {
+            // Remove existing
+            document.getElementById('confirmOverlay')?.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'confirmOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px);';
+            overlay.innerHTML = `
+                <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:1.25rem;padding:2rem;max-width:380px;width:100%;text-align:center;">
+                    <div style="width:52px;height:52px;background:rgba(239,68,68,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:1.5rem;">🗑️</div>
+                    <p style="color:white;font-weight:700;font-size:1rem;margin-bottom:0.5rem;">Confirm Delete</p>
+                    <p style="color:#94a3b8;font-size:0.875rem;margin-bottom:1.75rem;">${message}</p>
+                    <div style="display:flex;gap:0.75rem;">
+                        <button id="confirmNo"  style="flex:1;padding:0.75rem;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:0.75rem;color:#94a3b8;cursor:pointer;font-weight:600;font-size:0.875rem;">Cancel</button>
+                        <button id="confirmYes" style="flex:1;padding:0.75rem;background:#dc2626;border:none;border-radius:0.75rem;color:white;cursor:pointer;font-weight:700;font-size:0.875rem;">Delete</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            document.getElementById('confirmYes').onclick = () => { overlay.remove(); resolve(true);  };
+            document.getElementById('confirmNo').onclick  = () => { overlay.remove(); resolve(false); };
+            overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+        });
     }
 
     // ─────────────────────────────────────────────────

@@ -14,9 +14,14 @@ const app = express();
 app.use(express.json());
 app.use(cors({
     origin: '*',
-    methods: ['GET','POST','PATCH','DELETE'],
-    allowedHeaders: ['Content-Type','x-admin-password']
+    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type', 'x-admin-password', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
+
+// Handle preflight OPTIONS requests explicitly
+app.options('*', cors());
 
 
 // ═══════════════════════════════════════════════════════════════
