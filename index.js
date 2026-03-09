@@ -86,13 +86,33 @@ async function getAccessToken() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// HELPER: Normalize Kenyan phone number
+// HELPER: Normalize Kenyan phone number to 254XXXXXXXXX
 // ─────────────────────────────────────────────────────────────
 function normalizePhone(phone) {
     let clean = phone.replace(/\D/g, '');
-    if (clean.startsWith('0'))   clean = '254' + clean.slice(1);
-    if (clean.startsWith('7') || clean.startsWith('1')) clean = '254' + clean;
+    if (clean.startsWith('0'))                            clean = '254' + clean.slice(1);
+    if (clean.startsWith('7') || clean.startsWith('1'))  clean = '254' + clean;
     return clean;
+}
+
+// ─────────────────────────────────────────────────────────────
+// HELPER: Check if number is Safaricom (M-Pesa supported)
+// Safaricom prefixes: 0700-0729, 0740-0743, 0745, 0748,
+//                    0757-0759, 0768-0769, 0790-0799, 0110-0119
+// ─────────────────────────────────────────────────────────────
+function isSafaricomNumber(normalizedPhone) {
+    // normalizedPhone is already in 254XXXXXXXXX format
+    const local = normalizedPhone.slice(3); // strip 254 → get 9 digits starting with 7 or 1
+    const safaricomPrefixes = [
+        '700','701','702','703','704','705','706','707','708','709',
+        '710','711','712','713','714','715','716','717','718','719',
+        '720','721','722','723','724','725','726','727','728','729',
+        '740','741','742','743','745','748',
+        '757','758','759','768','769',
+        '790','791','792','793','794','795','796','797','798','799',
+        '110','111','112','113','114','115','116','117','118','119'
+    ];
+    return safaricomPrefixes.some(prefix => local.startsWith(prefix));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -119,7 +139,16 @@ app.post('/api/initiate-payment', async (req, res) => {
     }
 
     const cleanPhone = normalizePhone(phone);
-    const token      = await getAccessToken();
+
+    // ── Reject non-Safaricom numbers before calling API ──
+    if (!isSafaricomNumber(cleanPhone)) {
+        return res.status(400).json({
+            success: false,
+            message: `The number ${phone} is not a Safaricom line. M-Pesa only works on Safaricom numbers (07xx / 011x).`
+        });
+    }
+
+    const token = await getAccessToken();
     if (!token) {
         return res.status(503).json({ success: false, message: "M-Pesa service unavailable. Try again." });
     }
@@ -163,15 +192,29 @@ app.post('/api/initiate-payment', async (req, res) => {
         res.json({ success: true, checkoutRequestID, message: "M-Pesa prompt sent successfully" });
 
     } catch (err) {
-        const errData = err.response?.data;
-        console.error("❌ STK Error:", errData || err.message);
+        const errData    = err.response?.data;
+        const errCode    = errData?.errorCode || errData?.ResultCode || '';
+        const errMessage = errData?.errorMessage || errData?.ResultDesc || err.message;
 
-        // Friendly error messages
-        let userMessage = "M-Pesa Gateway Error. Try again.";
-        if (errData?.errorCode === "400.002.02") userMessage = "Invalid phone number format.";
-        if (errData?.errorCode === "404.001.04") userMessage = "Customer could not be found. Check the phone number.";
+        console.error("❌ STK Error Code:", errCode);
+        console.error("❌ STK Error Message:", errMessage);
+        console.error("❌ Full STK Error:", JSON.stringify(errData));
 
-        res.status(500).json({ success: false, message: userMessage });
+        // Map Safaricom error codes → friendly messages
+        const errorMap = {
+            '400.002.02': 'Invalid phone number. Make sure it is a valid Safaricom number.',
+            '404.001.04': 'Phone number not registered on M-Pesa.',
+            '400.002.05': 'Invalid value passed. Check your Till/Paybill number in .env',
+            '404.001.02': 'M-Pesa service temporarily unavailable. Try again in a moment.',
+            '500.001.1001': 'M-Pesa is currently down. Please try again later.',
+            '400.002.01': 'Invalid credentials. Check CONSUMER_KEY and CONSUMER_SECRET in .env',
+            '1': 'Insufficient M-Pesa balance on customer account.',
+            '17': 'M-Pesa system error. Try again shortly.',
+            '26': 'System busy — too many requests. Wait a moment and try again.',
+        };
+
+        const userMessage = errorMap[errCode] || `M-Pesa Gateway Error (${errCode || 'unknown'}). Try again.`;
+        res.status(500).json({ success: false, message: userMessage, code: errCode });
     }
 });
 
