@@ -417,6 +417,60 @@ app.post('/api/initiate-payment', async (req, res) => {
 
 
 // ═══════════════════════════════════════════════════════════════
+// ROUTE: Look up order by orderId (for timeout recovery)
+// POST /api/order-by-id
+// Used when fetch timed out and we have no checkoutRequestID
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/order-by-id', async (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId) return res.json({ success: false });
+    try {
+        const result = await pool.query(
+            'SELECT payment_status, mpesa_receipt, checkout_request_id FROM btech_orders WHERE order_id = $1',
+            [orderId]
+        );
+        if (result.rows.length === 0) return res.json({ success: false, notFound: true });
+        const row = result.rows[0];
+        logDb(`order-by-id lookup | orderId: ${orderId} | status: ${row.payment_status}`);
+        if (row.payment_status === 'PAID') return res.json({ success: true, receipt: row.mpesa_receipt });
+        return res.json({ success: false, pending: true, checkoutRequestID: row.checkout_request_id });
+    } catch (err) {
+        logError('order-by-id error', { message: err.message });
+        return res.json({ success: false, pending: true });
+    }
+});
+
+
+// ═══════════════════════════════════════════════════════════════
+// ROUTE: DB-only status check (no Safaricom call)
+// POST /api/check-status
+// Used by frontend final confirmation — just reads our DB
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/check-status', async (req, res) => {
+    const { checkoutRequestID } = req.body;
+    if (!checkoutRequestID) return res.json({ success: false });
+
+    try {
+        const result = await pool.query(
+            'SELECT payment_status, mpesa_receipt FROM btech_orders WHERE checkout_request_id = $1',
+            [checkoutRequestID]
+        );
+        if (result.rows.length === 0) return res.json({ success: false, pending: true });
+
+        const { payment_status, mpesa_receipt } = result.rows[0];
+        logDb(`DB-only check | status: ${payment_status} | receipt: ${mpesa_receipt || 'none'}`);
+
+        if (payment_status === 'PAID') return res.json({ success: true, receipt: mpesa_receipt });
+        if (payment_status === 'FAILED') return res.json({ success: false, failed: true });
+        return res.json({ success: false, pending: true });
+    } catch (err) {
+        logError('check-status DB error', { message: err.message });
+        return res.json({ success: false, pending: true });
+    }
+});
+
+
+// ═══════════════════════════════════════════════════════════════
 // ROUTE 2: Query Payment Status (frontend polling)
 // POST /api/query-payment
 // Body: { checkoutRequestID }
@@ -431,7 +485,7 @@ app.post('/api/query-payment', async (req, res) => {
 
     logMpesa(`Polling | checkoutRequestID: ${checkoutRequestID}`);
 
-    // Check DB first (fastest)
+    // ── STEP 1: Always check DB first — callback may have already arrived ──
     try {
         const dbResult = await pool.query(
             'SELECT payment_status, mpesa_receipt FROM btech_orders WHERE checkout_request_id = $1',
@@ -442,25 +496,29 @@ app.post('/api/query-payment', async (req, res) => {
             logDb(`DB poll result | status: ${row.payment_status} | receipt: ${row.mpesa_receipt || 'none'}`);
 
             if (row.payment_status === 'PAID') {
-                logOk(`Payment already PAID in DB | receipt: ${row.mpesa_receipt}`);
-                return res.json({ success: true, receipt: row.mpesa_receipt });
+                logOk(`DB confirms PAID | receipt: ${row.mpesa_receipt}`);
+                return res.json({ success: true, receipt: row.mpesa_receipt, source: 'db' });
             }
             if (row.payment_status === 'FAILED') {
-                logWarn('Payment already FAILED in DB');
-                return res.json({ success: false, failed: true, message: "Transaction was cancelled or failed." });
+                // IMPORTANT: Even if DB says FAILED, Safaricom sometimes fires a success
+                // callback AFTER the failure callback. So we fall through to Safaricom
+                // query to double-check before telling the frontend it's truly failed.
+                logWarn('DB says FAILED — will still query Safaricom to confirm before giving up');
             }
-            logMpesa('DB status is PENDING — querying Safaricom API');
+            // PENDING or FAILED — fall through to Safaricom query to confirm
+            logMpesa(`DB status: ${row.payment_status} — querying Safaricom to confirm`);
         } else {
-            logWarn(`No DB row found for checkoutRequestID: ${checkoutRequestID}`);
+            logWarn(`No DB row for checkoutRequestID: ${checkoutRequestID} — querying Safaricom directly`);
         }
     } catch (dbErr) {
         logError('DB error during poll', { message: dbErr.message, code: dbErr.code });
+        // Don't stop — fall through to Safaricom query
     }
 
-    // Query Safaricom directly
+    // ── STEP 2: Query Safaricom STK status API ──
     const token = await getAccessToken();
     if (!token) {
-        logWarn('Cannot query Safaricom — no token. Returning pending.');
+        logWarn('No token — returning pending');
         return res.json({ success: false, pending: true });
     }
 
@@ -487,37 +545,36 @@ app.post('/api/query-payment', async (req, res) => {
         logMpesa(`Safaricom query response | ResultCode: ${resultCode} | ResultDesc: ${resultDesc}`);
 
         if (resultCode === '0') {
-            logOk('Safaricom confirms payment SUCCESS — updating DB');
+            logOk('Safaricom confirms SUCCESS — force-updating DB to PAID (overrides any previous FAILED status)');
+            // Use UPDATE without WHERE payment_status filter — override even FAILED status
+            // because Safaricom sometimes sends a success query result after a failed callback
             await pool.query(
                 `UPDATE btech_orders SET payment_status = 'PAID', updated_at = NOW()
-                 WHERE checkout_request_id = $1 AND payment_status = 'PENDING'`,
+                 WHERE checkout_request_id = $1`,
                 [checkoutRequestID]
-            );
+            ).catch(e => logWarn('Could not update DB to PAID', { message: e.message }));
+
             const updated = await pool.query(
                 'SELECT mpesa_receipt FROM btech_orders WHERE checkout_request_id = $1',
                 [checkoutRequestID]
-            );
+            ).catch(() => ({ rows: [] }));
+
             const receipt = updated.rows[0]?.mpesa_receipt || 'N/A';
-            logOk(`DB updated to PAID | receipt: ${receipt}`);
-            return res.json({ success: true, receipt });
+            logOk(`Returning success | receipt: ${receipt}`);
+            return res.json({ success: true, receipt, source: 'safaricom' });
 
         } else if (resultCode === '1032') {
-            logWarn('Cancelled by user (1032)');
-            await pool.query(
-                `UPDATE btech_orders SET payment_status = 'FAILED', updated_at = NOW()
-                 WHERE checkout_request_id = $1`,
-                [checkoutRequestID]
-            );
-            return res.json({ success: false, failed: true, message: "You cancelled the M-Pesa request." });
+            // 1032 = user cancelled BUT Safaricom sometimes sends this code while the
+            // payment actually went through. The real callback arrives 5-30s later.
+            // NEVER mark DB as FAILED from query — only the /api/callback should do that.
+            logWarn('Query returned 1032 (cancelled) — returning pending, letting callback decide final status');
+            return res.json({ success: false, pending: true });
 
         } else if (resultCode === '1037') {
-            logWarn('Prompt timed out (1037) — user did not enter PIN');
-            await pool.query(
-                `UPDATE btech_orders SET payment_status = 'FAILED', updated_at = NOW()
-                 WHERE checkout_request_id = $1`,
-                [checkoutRequestID]
-            );
-            return res.json({ success: false, failed: true, message: "M-Pesa prompt timed out. Please try again." });
+            // 1037 = prompt timed out — same issue: callback may still arrive with success.
+            // Return pending so frontend keeps polling.
+            logWarn('Query returned 1037 (timeout) — returning pending, letting callback decide final status');
+            return res.json({ success: false, pending: true });
 
         } else {
             logMpesa(`Still pending | code: ${resultCode} | ${resultDesc}`);
@@ -530,6 +587,9 @@ app.post('/api/query-payment', async (req, res) => {
             errorMessage: err.response?.data?.errorMessage,
             axiosError:   err.message
         });
+        return res.json({ success: false, pending: true });
+    }
+});;
         return res.json({ success: false, pending: true });
     }
 });
@@ -588,12 +648,21 @@ app.post('/api/callback', async (req, res) => {
 
         } else {
             logWarn(`Payment FAILED/CANCELLED | code: ${resultCode} | reason: ${resultDesc}`);
+            // CRITICAL: Only mark FAILED if the record is NOT already PAID.
+            // Safaricom sometimes sends a failure callback BEFORE the success callback.
+            // We must never overwrite a PAID record with FAILED.
             const result = await pool.query(
                 `UPDATE btech_orders SET payment_status = 'FAILED', updated_at = NOW()
-                 WHERE checkout_request_id = $1 RETURNING order_id`,
+                 WHERE checkout_request_id = $1
+                   AND payment_status != 'PAID'
+                 RETURNING order_id`,
                 [checkoutID]
             );
-            logDb(`DB updated to FAILED | matched rows: ${result.rowCount}`);
+            if (result.rowCount > 0) {
+                logDb(`DB updated to FAILED | order: ${result.rows[0].order_id}`);
+            } else {
+                logWarn(`FAILED callback ignored — order is already PAID (checkoutID: ${checkoutID})`);
+            }
         }
     } catch (err) {
         logError('Error processing callback', { message: err.message, stack: err.stack });
